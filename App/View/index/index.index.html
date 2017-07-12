@@ -1,0 +1,183 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <title>客服页面</title>
+    <link rel="stylesheet" href="<?=StaticDir?>layui/css/layui.css">
+    <link rel="stylesheet" href="<?=StaticDir?>css/base.css">
+    <script src="<?=StaticDir?>layui/layui.js"></script>
+    <script src="<?=StaticDir?>js/json2.js"></script>
+    <script src="<?=StaticDir?>js/swfobject.js"></script>
+    <script src="<?=StaticDir?>js/web_socket.js"></script>
+    <script src="<?=StaticDir?>js/jquery.min.js"></script>
+    <style>
+        html{background-color: #D9D9D9;}
+    </style>
+</head>
+<body>
+
+<div class="kefu_code">
+    <p style="line-height: 40px">复制并粘贴这段代码到您网页的&lt;/body&gt;前，即可显示在线客服图标，同时在此页面与客户对话</p>
+<textarea style="width:660px;height:80px;background:#dcdcdc">
+<a href="http://xishanpo.com" web-id="123" id="workerman-kefu">在线客服</a>
+<script src="http://xishanpo.com/static/layui/layui.js"></script>
+<script src="http://xishanpo.com/static/layui/workerman-kefu.js"></script>
+</textarea>
+</div>
+
+<div class="main-box">
+    <div class="desc">
+        <h2>LayLive客服系统</h2>
+        <p>
+            LayLive客服系统，让你的站点瞬间拥有客服功能，提升站点转化率。<br>
+            零成本接入，只需要引入一段js即可，支持多个站点。<br>
+            支持ie6 ie7以外所有浏览器。
+        </p>
+
+    </div>
+</div>
+
+
+<script type="text/javascript">
+    var my_events;
+    var _id = '<?=$kf_id?>'
+    var _kf_id = '<?=$kf_name?>';
+    
+    // 浏览器不支持websocket则自动用flash模拟
+    WEB_SOCKET_SWF_LOCATION = "<?=StaticDir?>swf/WebSocketMain.swf";
+    WEB_SOCKET_DEBUG = true;
+    // QQ互联
+    userinfo = {};
+    inited = false;
+    connect_workerman();
+    setInterval('send_heartbeat()', 20000);
+    function connect_workerman(){
+        socket = new WebSocket('ws://'+document.domain+':8181');
+        socket.onopen = function(){
+            socket.send(JSON.stringify({type: 'kefu_init', data:{web_id:_id, kefu_id:_kf_id}}));
+        };
+        socket.onmessage = function(e){
+            var msg = JSON.parse(e.data);
+            switch(msg.message_type) {
+                case 'init':
+                    $.post("/kefu/getUnreadMsg/",{id:_id}, function(data){
+                        if(data.code == 0) {
+                            initim(data.unread_messages);
+                        } else {
+                            alert(data.msg);
+                        }
+                    }, 'json');
+                    return;
+                case 'addList':
+                    if($('#layim-friend'+msg.data.id).length == 0){
+                        return layui.layim.addList(msg.data);
+                    }
+                    $('#layim-friend'+msg.data.id+' img'). removeClass('gray_icon');
+                    return;
+                case 'chatMessage':
+                    layui.layim.getMessage(msg.data);
+                    return;
+                case 'logout':
+                case 'hide':
+                case 'online':
+                    var status = msg.message_type;
+                    change_online_status(msg.id, status);
+                    return;
+            }
+        }
+        socket.onclose = connect_workerman;
+    }
+
+    // 发送心跳，防止链接长时间空闲被防火墙关闭
+    function send_heartbeat(){
+        if(socket && socket.readyState == 1) {
+            socket.send(JSON.stringify({type :'ping'}));
+        }
+    }
+
+    function change_online_status(id, status){
+        var _obj = $('.layim-chatlist-'+id+' img')
+        var _obj2 = $('#layim-history'+id+' img')
+
+        if (status === 'hide' || status === 'logout') {
+            if ( _obj2 ) _obj2.addClass('gray_icon');
+            if ( _obj ) _obj.addClass('gray_icon');
+            return;
+        }
+        if ( _obj ) _obj.removeClass('gray_icon');
+        if ( _obj2 ) _obj2.removeClass('gray_icon');
+    }
+
+    function add_history_tip(){
+        $('.layim-chat-main ul').append('<li><div class="history-tip">以上是历史消息</div></li>');
+    }
+
+    // 初始化聊天窗口
+    function initim(unread_message){
+        if(inited) {
+            return;
+        }
+        inited = true;
+        layui.use('layim', function(layim){
+            //基础配置
+            layim.config({
+
+                //初始化接口
+                init: {
+                    url: '/kefu/getKefuInfo/'
+                    ,data: userinfo
+                }
+
+                //查看群员接口
+                ,members: false
+
+                // 上传图片
+                ,uploadImage: false
+
+                // 上传文件
+                ,uploadFile: false
+
+                //聊天记录地址
+                ,chatLog: '/kefu/history/'
+
+                ,find: ''
+
+                ,isgroup: false
+
+                ,isfriend: false
+
+                ,copyright: false
+
+                ,title : '客服在线'
+            });
+
+            //监听发送消息
+            layim.on('sendMessage', function(data){
+                //$.post("./post_message.php", { data: data} );
+                //console.log(data);
+                socket.send(JSON.stringify({type:"kefuSendMessage", data:data}));
+            });
+
+            //监听在线状态的切换事件
+            layim.on('online', function(data){
+                socket.send(JSON.stringify({type: data}));
+            });
+
+            //layim建立就绪
+            layim.on('ready', function(res){
+                // 历史消息
+                //console.log(unread_message);
+                for(var key in unread_message){
+                //console.log(JSON.parse(unread_message[key]));
+                    layim.getMessage(JSON.parse(unread_message[key]));
+                }
+            });
+        });
+    }
+</script>
+
+
+</body>
+</html>
